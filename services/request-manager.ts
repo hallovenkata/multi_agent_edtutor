@@ -38,7 +38,7 @@ export class RequestManager {
   private streamingRequests: Map<string, StreamRequest> = new Map()
   private agentStatus: Map<string, "idle" | "processing" | "error" | "cancelled"> = new Map()
   private requestCache: Map<string, { response: LLMResponse; timestamp: number }> = new Map()
-  private maxConcurrentRequests = 3
+  private maxConcurrentRequests = 1 // Process requests sequentially
   private cacheTimeout = 5 * 60 * 1000 // 5 minutes
 
   constructor() {
@@ -119,8 +119,8 @@ export class RequestManager {
     config: LLMConfig,
     options: RequestOptions = {},
   ): Promise<LLMResponse> {
-    // Cancel any existing requests for this agent if not allowing concurrent
-    if (!options.cancellable) {
+    // Only cancel existing requests if explicitly requested
+    if (options.cancellable === false) {
       this.cancelAgentRequests(agentName)
     }
 
@@ -137,7 +137,7 @@ export class RequestManager {
       timeout: 30000, // 30 seconds
       retries: 2,
       priority: "medium",
-      cancellable: false,
+      cancellable: true, // Default to allowing concurrent requests
       ...options,
     }
 
@@ -225,25 +225,38 @@ export class RequestManager {
 
   // Process the request queue
   private async processQueue() {
-    while (this.requestQueue.length > 0 && this.activeRequests.size < this.maxConcurrentRequests) {
-      const request = this.requestQueue.shift()
-      if (!request) continue
+    // If we're already at max concurrent requests, wait for one to finish
+    if (this.activeRequests.size >= this.maxConcurrentRequests) {
+      return;
+    }
 
-      this.activeRequests.set(request.id, request)
-      this.executeRequest(request)
+    const nextRequest = this.requestQueue.shift();
+    if (!nextRequest) return;
+
+    this.activeRequests.set(nextRequest.id, nextRequest);
+    this.agentStatus.set(nextRequest.agentName, 'processing');
+    
+    try {
+      await this.executeRequest(nextRequest);
+    } catch (error) {
+      console.error('Error in request execution:', error);
+    } finally {
+      // Process next request in queue after current one completes
+      this.processQueue();
     }
   }
 
   // Execute a single request with retry logic
   private async executeRequest(request: QueuedRequest) {
     const { id, agentName, messages, config, options, resolve, reject, abortController } = request
+    const { timeout = 30000 } = options
 
     try {
       // Set timeout
       const timeoutId = setTimeout(() => {
         abortController.abort()
         this.handleRequestError(request, new Error("Request timeout"))
-      }, options.timeout!)
+      }, timeout)
 
       const response = await llmService.chat(messages, config)
 
@@ -259,7 +272,7 @@ export class RequestManager {
       this.handleRequestError(request, error as Error)
     } finally {
       this.activeRequests.delete(id)
-      this.processQueue() // Process next request in queue
+      // The processQueue() will be called by the queue processor
     }
   }
 
@@ -275,12 +288,14 @@ export class RequestManager {
 
     request.retryCount++
 
-    if (request.retryCount <= options.retries!) {
-      // Exponential backoff
-      const delay = Math.min(1000 * Math.pow(2, request.retryCount - 1), 10000)
+    if (request.retryCount <= (options.retries || 0)) {
+      // Exponential backoff with jitter
+      const baseDelay = Math.min(1000 * Math.pow(2, request.retryCount - 1), 10000)
+      const jitter = Math.random() * 1000 // Add up to 1s jitter
+      const delay = Math.floor(baseDelay + jitter)
 
+      // Add back to the front of the queue with a delay
       setTimeout(() => {
-        // Re-add to queue for retry
         this.requestQueue.unshift(request)
         this.processQueue()
       }, delay)

@@ -258,7 +258,12 @@ export class EnhancedTeachingAgent extends EnhancedAgent {
     }
   }
 
-  async generateInitialGuidance(problem: string, subject: string, studentLevel: string): Promise<string> {
+  async generateInitialGuidance(
+    problem: string, 
+    subject: string, 
+    studentLevel: string,
+    options: { cancellable?: boolean } = {}
+  ): Promise<string> {
     const messages: LLMMessage[] = [
       {
         role: "user",
@@ -379,7 +384,10 @@ export class EnhancedContentAgent extends EnhancedAgent {
     super("CA", config, agentPrompts.CA.system)
   }
 
-  async analyzeProblem(problem: string): Promise<{
+  async analyzeProblem(
+    problem: string,
+    options: { cancellable?: boolean } = {}
+  ): Promise<{
     type: string
     difficulty: string
     concepts: string[]
@@ -425,6 +433,7 @@ export class EnhancedContentAgent extends EnhancedAgent {
   async generateSolutionSteps(
     problem: string,
     studentLevel: string,
+    options: { cancellable?: boolean } = {}
   ): Promise<
     Array<{
       id: number
@@ -450,13 +459,13 @@ export class EnhancedContentAgent extends EnhancedAgent {
     const response = await this.callLLM(messages, undefined, "high")
 
     // Parse the response into structured steps
-    const stepMatches = response.match(/STEP \d+:.*?(?=STEP \d+:|$)/gs)
+    const stepMatches = response.match(/STEP \d+:[\s\S]+?(?=STEP \d+:|$)/g)
 
     if (stepMatches) {
       return stepMatches.map((stepText, index) => {
         const descMatch = stepText.match(/STEP \d+: (.+?)(?:\n|$)/)
         const equationMatch = stepText.match(/EQUATION: (.+?)(?:\n|$)/)
-        const explanationMatch = stepText.match(/EXPLANATION: (.+?)(?=STEP|$)/s)
+        const explanationMatch = stepText.match(/EXPLANATION: ([\s\S]+?)(?=STEP|$)/)
 
         return {
           id: index + 1,

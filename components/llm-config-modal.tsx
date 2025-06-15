@@ -75,7 +75,7 @@ export function LLMConfigModal({ configs, onConfigsChange, onDefaultConfigChange
     gemini: {
       name: "Google Gemini",
       description: "Gemini models from Google AI",
-      models: ["gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.5-flash"],
+      models: ["gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-2.0-flash"],
       defaultUrl: "https://generativelanguage.googleapis.com/v1beta",
       keyFormat: "AIza...",
       keyHelp: "Get your API key from https://aistudio.google.com/app/apikey",

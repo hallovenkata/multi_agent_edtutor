@@ -15,6 +15,7 @@ interface ParallelTask {
   task: string
   promise: Promise<any>
   startTime: number
+  dependsOn?: string
 }
 
 interface ProblemAnalysisResult {
@@ -68,25 +69,69 @@ export class ParallelAgentManager {
     const taskId = `analysis_${Date.now()}`
 
     try {
-      // Start all tasks in parallel
-      const tasks = [
+      // Create tasks with proper concurrency control
+      const tasks: Array<ParallelTask> = [
         {
           id: "analysis",
           agent: "CA",
           task: "Analyzing problem structure",
-          promise: this.agents.ca!.analyzeProblem(problemText),
+          promise: (async () => {
+            // Make this request non-cancellable to prevent accidental cancellation
+            const result = await this.agents.ca!.analyzeProblem(problemText, { cancellable: false });
+            onProgress("CA", "Problem analysis complete", 50);
+            return result;
+          })(),
+          startTime: Date.now(),
         },
         {
           id: "steps",
           agent: "CA",
           task: "Generating solution steps",
-          promise: this.agents.ca!.generateSolutionSteps(problemText, studentLevel),
+          dependsOn: "analysis",
+          promise: (async () => {
+            try {
+              // Wait for analysis to complete if it's still running
+              const analysisTask = this.activeTasks.get("analysis");
+              if (analysisTask) {
+                await analysisTask.promise;
+              }
+              // Make this request non-cancellable as well
+              const result = await this.agents.ca!.generateSolutionSteps(
+                problemText,
+                studentLevel,
+                { cancellable: false }
+              );
+              onProgress("CA", "Solution steps generated", 80);
+              return result;
+            } catch (error) {
+              console.error("Error in solution steps generation:", error);
+              throw error;
+            }
+          })(),
+          startTime: Date.now(),
         },
         {
           id: "guidance",
           agent: "TA",
           task: "Preparing initial guidance",
-          promise: this.agents.ta!.generateInitialGuidance(problemText, "Mathematics", studentLevel),
+          // Let this run in parallel with CA tasks
+          promise: (async () => {
+            try {
+              // Make this request non-cancellable
+              const result = await this.agents.ta!.generateInitialGuidance(
+                problemText, 
+                "Mathematics", 
+                studentLevel,
+                { cancellable: false }
+              );
+              onProgress("TA", "Guidance prepared", 100);
+              return result;
+            } catch (error) {
+              console.error("Error in guidance generation:", error);
+              throw error;
+            }
+          })(),
+          startTime: Date.now(),
         },
       ]
 
@@ -94,25 +139,37 @@ export class ParallelAgentManager {
       const results: any = {}
       const progressTracker = new Map<string, number>()
 
-      // Start all tasks
+      // Process tasks with dependencies
       const taskPromises = tasks.map(async (task) => {
+        // Skip if this task depends on another that hasn't completed
+        if (task.dependsOn) {
+          const dependency = this.activeTasks.get(task.dependsOn);
+          if (dependency) {
+            await dependency.promise.catch(() => {
+              // If dependency fails, skip this task
+              throw new Error(`Dependency ${task.dependsOn} failed`);
+            });
+          }
+        }
+
         this.activeTasks.set(task.id, {
           ...task,
           startTime: Date.now(),
-        })
+        });
 
-        onProgress(task.agent, task.task, 0)
-        progressTracker.set(task.id, 0)
+        onProgress(task.agent, task.task, 0);
+        progressTracker.set(task.id, 0);
 
-        // Simulate progress updates
+        // Update progress less frequently to reduce UI updates
         const progressInterval = setInterval(() => {
-          const currentProgress = progressTracker.get(task.id) || 0
+          const currentProgress = progressTracker.get(task.id) || 0;
           if (currentProgress < 90) {
-            const newProgress = Math.min(90, currentProgress + Math.random() * 20)
-            progressTracker.set(task.id, newProgress)
-            onProgress(task.agent, task.task, newProgress)
+            // Slower progress updates for better UX
+            const newProgress = Math.min(90, currentProgress + Math.random() * 10);
+            progressTracker.set(task.id, newProgress);
+            onProgress(task.agent, task.task, newProgress);
           }
-        }, 200)
+        }, 500); // Reduced frequency of updates
 
         try {
           const result = await task.promise

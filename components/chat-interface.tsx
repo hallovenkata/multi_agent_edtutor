@@ -3,6 +3,7 @@
 import type React from "react"
 
 import { useState, useRef, useEffect, useCallback } from "react"
+import { useChatPersistence } from "@/hooks/use-chat-persistence"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
@@ -24,55 +25,60 @@ import {
   HelpCircle,
 } from "lucide-react"
 
-interface ChatMessage {
-  id: string
-  role: "user" | "assistant" | "system"
-  content: string
-  type: "message" | "feedback" | "hint" | "step" | "question" | "celebration"
-  timestamp: Date
-  canSpeak?: boolean
-  isStreaming?: boolean
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  type: "message" | "feedback" | "hint" | "step" | "question" | "celebration";
+  timestamp: Date;
+  canSpeak?: boolean;
+  isStreaming?: boolean;
   metadata?: {
-    stepNumber?: number
-    isCorrect?: boolean
-    attempts?: number
-    showControls?: boolean
-  }
+    stepNumber?: number;
+    isCorrect?: boolean;
+    attempts?: number;
+    showControls?: boolean;
+  };
+  // Remove duplicate fields that are already in metadata
+  stepNumber?: never;
+  isCorrect?: never;
+  attempts?: never;
+  showControls?: never;
 }
 
 interface ChatInterfaceProps {
   problem: {
-    id: string
-    original: string
-    subject: string
-    type: string
-    difficulty: string
+    id: string;
+    original: string;
+    subject: string;
+    type: string;
+    difficulty: string;
     steps: Array<{
-      id: number
-      description: string
-      content: string
-      explanation: string
-      userInput?: string
-      isCorrect?: boolean
-      attempts: number
-    }>
-  }
-  currentStep: number
-  onBack: () => void
-  onSubmitAnswer: (answer: string) => void
-  onRequestHint: () => void
-  onNextStep: () => void
-  onPreviousStep: () => void
-  onExplainStep: () => void
-  onResetProblem: () => void
-  isProcessing: boolean
-  processingAgent: string | null
-  voiceEnabled: boolean
-  onSpeak: (text: string, priority?: "high" | "normal", type?: string) => void
-  isListening: boolean
-  onStartListening: () => void
-  onStopListening: () => void
-  studentLevel: string
+      id: number;
+      description: string;
+      content: string;
+      explanation: string;
+      userInput?: string;
+      isCorrect?: boolean;
+      attempts: number;
+    }>;
+  };
+  currentStep: number;
+  onBack: () => void;
+  onSubmitAnswer: (answer: string) => void;
+  onRequestHint: () => void;
+  onNextStep: () => void;
+  onPreviousStep: () => void;
+  onExplainStep: () => void;
+  onResetProblem: () => void;
+  isProcessing: boolean;
+  processingAgent: string | null;
+  voiceEnabled: boolean;
+  onSpeak: (text: string, priority?: "high" | "normal" | "low", type?: string) => void;
+  isListening: boolean;
+  onStartListening: () => void;
+  onStopListening: () => void;
+  studentLevel: string;
 }
 
 export function ChatInterface({
@@ -94,13 +100,57 @@ export function ChatInterface({
   onStopListening,
   studentLevel,
 }: ChatInterfaceProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
-  const [currentInput, setCurrentInput] = useState("")
-  const [streamingMessage, setStreamingMessage] = useState("")
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const { messages, setMessages } = useChatPersistence(problem.id);
+  const [currentInput, setCurrentInput] = useState("");
+  const [streamingMessage, setStreamingMessage] = useState("");
+  const isInitialMount = useRef(true);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Handle initial greeting - only on first mount
+  useEffect(() => {
+    if (isInitialMount.current && messages.length === 0) {
+      const greetingMessage: ChatMessage = {
+        id: `msg-${Date.now()}`,
+        role: "assistant",
+        content: `Welcome! I'm here to help you solve this ${problem.subject} problem. Let's get started!`,
+        type: "message",
+        timestamp: new Date(),
+        canSpeak: true,
+      };
+      setMessages(prev => [...prev, greetingMessage]);
+      onSpeak(greetingMessage.content, "normal");
+      isInitialMount.current = false;
+    }
+  }, [messages.length, onSpeak, problem.subject, setMessages]);
+  
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, streamingMessage]);
+  
+  // Handle sending a message
+  const handleSendMessage = useCallback(() => {
+    if (!currentInput.trim() || isProcessing) return;
 
-  // Initialize chat with welcome message
+    const userMessage: ChatMessage = {
+      id: `msg-${Date.now()}`,
+      role: "user",
+      content: currentInput,
+      type: "message",
+      timestamp: new Date(),
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    setCurrentInput("");
+
+    // Process the message
+    onSubmitAnswer(currentInput);
+  }, [currentInput, isProcessing, onSubmitAnswer, setMessages]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, streamingMessage]);
+
   useEffect(() => {
     const welcomeMessage: ChatMessage = {
       id: "welcome",
@@ -180,47 +230,21 @@ What's your approach to this step?`,
         },
       }
 
-      setMessages((prev) => [...prev, stepMessage])
+      setMessages((prev: ChatMessage[]) => [...prev, stepMessage])
     }
   }, [currentStep, problem.steps])
-
-  const handleSubmit = () => {
-    if (!currentInput.trim() || isProcessing) return
-
-    // Add user message
-    const userMessage: ChatMessage = {
-      id: `user-${Date.now()}`,
-      role: "user",
-      content: currentInput,
-      type: "message",
-      timestamp: new Date(),
-    }
-
-    setMessages((prev) => [...prev, userMessage])
-
-    // Submit answer
-    onSubmitAnswer(currentInput)
-    setCurrentInput("")
-
-    // Add processing message
-    const processingMessage: ChatMessage = {
-      id: `processing-${Date.now()}`,
-      role: "assistant",
-      content: "Let me evaluate your answer...",
-      type: "message",
-      timestamp: new Date(),
-      isStreaming: true,
-    }
-
-    setMessages((prev) => [...prev, processingMessage])
-  }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
-      handleSubmit()
+      handleSubmit(e);
     }
   }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    handleSendMessage();
+  };
 
   const addFeedbackMessage = useCallback(
     (content: string, isCorrect: boolean, attempts: number) => {
@@ -237,7 +261,7 @@ What's your approach to this step?`,
         },
       }
 
-      setMessages((prev) => {
+      setMessages((prev: ChatMessage[]) => {
         // Remove processing message
         const filtered = prev.filter((msg) => !msg.isStreaming)
         return [...filtered, feedbackMessage]
@@ -260,7 +284,7 @@ What's your approach to this step?`,
               showControls: currentStep < problem.steps.length - 1,
             },
           }
-          setMessages((prev) => [...prev, celebrationMessage])
+          setMessages((prev: ChatMessage[]) => [...prev, celebrationMessage])
         }, 1000)
       }
     },
@@ -279,7 +303,7 @@ Try thinking about it this way and give it another shot!`,
       canSpeak: true,
     }
 
-    setMessages((prev) => [...prev, hintMessage])
+    setMessages((prev: ChatMessage[]) => [...prev, hintMessage])
   }, [])
 
   const handleSpeakMessage = (message: ChatMessage) => {
@@ -347,10 +371,19 @@ Try thinking about it this way and give it another shot!`,
 
   // Expose methods for parent component
   useEffect(() => {
-    ;(window as any).chatInterface = {
-      addFeedbackMessage,
-      addHintMessage,
+    if (typeof window !== 'undefined') {
+      (window as any).chatInterface = {
+        addFeedbackMessage: (content: string, isCorrect: boolean, attempts: number) => 
+          addFeedbackMessage(content, isCorrect, attempts),
+        addHintMessage: (content: string) => addHintMessage(content),
+      };
     }
+    
+    return () => {
+      if (typeof window !== 'undefined') {
+        delete (window as any).chatInterface;
+      }
+    };
   }, [addFeedbackMessage, addHintMessage])
 
   return (

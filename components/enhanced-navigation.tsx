@@ -21,11 +21,24 @@ import {
   Brain,
   Activity,
   Zap,
+  MessageSquare,
+  ChevronDown,
 } from "lucide-react"
+import { useChatPersistence, type ChatSession } from "@/hooks/use-chat-persistence"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { useState, useEffect } from "react"
+import { useSearchParams as useSearchParamsHook } from 'next/navigation';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 interface EnhancedNavigationProps {
   currentPage: string
   onPageChange: (page: string) => void
+  onChatSelect?: (problemId: string) => void
   student: {
     name: string
     location: string
@@ -57,6 +70,7 @@ interface EnhancedNavigationProps {
 export function EnhancedNavigation({
   currentPage,
   onPageChange,
+  onChatSelect = () => {},
   student,
   currentProblem,
   currentStep,
@@ -64,6 +78,53 @@ export function EnhancedNavigation({
   processingAgent,
   queueStatus,
 }: EnhancedNavigationProps) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const [sessions, setSessions] = useState<ChatSession[]>([])
+  const { getActiveSessions } = useChatPersistence('')
+  const [selectedChat, setSelectedChat] = useState<string | null>(null)
+  const searchParams = useSearchParamsHook()
+  const chatId = searchParams.get('chatId')
+
+  useEffect(() => {
+    const activeSessions = getActiveSessions()
+    setSessions(activeSessions)
+    
+    // Set the selected chat from URL if it exists in active sessions
+    if (chatId && !selectedChat) {
+      const chatExists = activeSessions.some(session => session.problemId === chatId)
+      if (chatExists) {
+        setSelectedChat(chatId)
+      }
+    }
+    
+    const interval = setInterval(() => {
+      setSessions(getActiveSessions())
+    }, 30000)
+    
+    return () => clearInterval(interval)
+  }, [getActiveSessions, chatId, selectedChat])
+
+  const formatTimeAgo = (date: Date) => {
+    const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000)
+    const intervals = {
+      year: 31536000,
+      month: 2592000,
+      week: 604800,
+      day: 86400,
+      hour: 3600,
+      minute: 60
+    }
+
+    for (const [unit, secondsInUnit] of Object.entries(intervals)) {
+      const interval = Math.floor(seconds / secondsInUnit)
+      if (interval >= 1) {
+        return `${interval}${unit[0]} ago`
+      }
+    }
+    return 'Just now'
+  }
+
   const navItems = [
     {
       id: "tutor",
@@ -184,7 +245,62 @@ export function EnhancedNavigation({
         {/* Navigation */}
         <Card>
           <CardContent className="p-4">
-            <h3 className="font-semibold mb-3">Navigation</h3>
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="font-semibold">Navigation</h3>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="h-8 px-2 text-xs flex items-center gap-1"
+                  >
+                    <MessageSquare className="h-3.5 w-3.5" />
+                    <span>Chats</span>
+                    {sessions.length > 0 && (
+                      <Badge variant="secondary" className="ml-1 h-4 w-4 p-0 flex items-center justify-center">
+                        {sessions.length}
+                      </Badge>
+                    )}
+                    <ChevronDown className="h-3 w-3 ml-0.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-72" align="end" sideOffset={8}>
+                  <div className="px-2 py-1.5 text-xs font-medium text-gray-500">Active Chats</div>
+                  {sessions.length === 0 ? (
+                    <div className="px-3 py-2 text-sm text-gray-500">No active chats</div>
+                  ) : (
+                    <div className="max-h-60 overflow-y-auto">
+                      {sessions.map((session) => (
+                        <DropdownMenuItem 
+                          key={session.problemId}
+                          onClick={() => {
+                            setSelectedChat(session.problemId);
+                            onChatSelect(session.problemId);
+                            // Update URL to reflect the selected chat
+                            const params = new URLSearchParams(searchParams.toString());
+                            params.set('chatId', session.problemId);
+                            router.push(`${pathname}?${params.toString()}`);
+                          }}
+                          className={`flex flex-col items-start gap-1 p-2 cursor-pointer ${
+                            selectedChat === session.problemId ? 'bg-blue-50' : 'hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex justify-between w-full">
+                            <span className="font-medium text-sm truncate">{session.title}</span>
+                            <span className="text-xs text-gray-500 whitespace-nowrap ml-2">
+                              {formatTimeAgo(session.lastUpdated)}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500 truncate w-full text-left">
+                            {session.preview}
+                          </p>
+                        </DropdownMenuItem>
+                      ))}
+                    </div>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
             <div className="space-y-2">
               {navItems.map((item) => {
                 const Icon = item.icon

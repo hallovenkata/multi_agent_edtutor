@@ -1,33 +1,32 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { User, GraduationCap, Atom, Calculator, Cpu, Wrench } from "lucide-react"
+import { User, GraduationCap, Atom, Calculator, Cpu, Wrench, Loader2 } from "lucide-react"
+import { useUserData, type UserData } from "@/hooks/use-user-data"
 
 interface OnboardingProps {
-  onComplete: (userData: {
-    name: string
-    location: string
-    gradeLevel: string
-    stemLevel: string
-    preferredSubjects: string[]
-  }) => void
+  onComplete: (userData: UserData) => void
+  initialData?: Partial<UserData>
+  isNewSession?: boolean
 }
 
-export function Onboarding({ onComplete }: OnboardingProps) {
-  const [formData, setFormData] = useState({
-    name: "",
-    location: "",
-    gradeLevel: "",
-    stemLevel: "",
-    preferredSubjects: [] as string[],
-  })
+export function Onboarding({ onComplete, initialData, isNewSession = false }: OnboardingProps) {
+  const { saveUserData } = useUserData()
+  const [formData, setFormData] = useState<Omit<UserData, 'lastSession'>>(() => ({
+    name: initialData?.name || "",
+    location: initialData?.location || "",
+    gradeLevel: initialData?.gradeLevel || "",
+    stemLevel: initialData?.stemLevel || "",
+    preferredSubjects: initialData?.preferredSubjects || [],
+  }))
 
   const [currentStep, setCurrentStep] = useState(0)
+  const [isSaving, setIsSaving] = useState(false)
 
   const steps = [
     {
@@ -56,11 +55,41 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     { id: "computer-science", label: "Computer Science", icon: <Cpu className="h-4 w-4" /> },
   ]
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsSaving(true)
+    try {
+      // Save user data to localStorage
+      const success = saveUserData(formData)
+      if (success) {
+        onComplete({
+          ...formData,
+          lastSession: Date.now()
+        })
+      } else {
+        // Fallback: Continue without saving to localStorage
+        onComplete({
+          ...formData,
+          lastSession: Date.now()
+        })
+      }
+    } catch (error) {
+      console.error('Error saving user data:', error)
+      // Continue with the flow even if saving fails
+      onComplete({
+        ...formData,
+        lastSession: Date.now()
+      })
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   const handleNext = () => {
     if (currentStep < steps.length - 1) {
       setCurrentStep(currentStep + 1)
     } else {
-      onComplete(formData)
+      handleSubmit
     }
   }
 
@@ -224,14 +253,29 @@ export function Onboarding({ onComplete }: OnboardingProps) {
             </div>
           )}
 
-          <div className="flex justify-between pt-4">
-            <Button variant="outline" onClick={handleBack} disabled={currentStep === 0}>
-              Back
-            </Button>
-            <Button onClick={handleNext} disabled={!isStepValid()}>
-              {currentStep === steps.length - 1 ? "Get Started!" : "Next"}
-            </Button>
-          </div>
+          <form onSubmit={handleSubmit}>
+            <div className="flex justify-between pt-4">
+              <Button variant="outline" onClick={handleBack} disabled={currentStep === 0}>
+                Back
+              </Button>
+              <Button 
+                type="submit" 
+                className="w-full"
+                disabled={isSaving}
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : currentStep === steps.length - 1 ? (
+                  isNewSession ? "Start New Session" : "Get Started"
+                ) : (
+                  "Continue"
+                )}
+              </Button>
+            </div>
+          </form>
 
           {/* Progress indicator */}
           <div className="flex justify-center space-x-2">
