@@ -179,7 +179,7 @@ export function AgentsPage() {
       <div className="text-center space-y-2">
         <h2 className="text-3xl font-bold text-gray-900">Multi-Agent System</h2>
         <p className="text-gray-600 max-w-2xl mx-auto">
-          Our Math Tutor AI is powered by 10 specialized agents working together to provide personalized, interactive
+          Our STEM Tutor is powered by 10 specialized agents working together to provide personalized, interactive
           learning experiences. Each agent has specific capabilities and responsibilities in the tutoring process.
         </p>
       </div>
@@ -237,7 +237,11 @@ export function AgentsPage() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className={`p-2 rounded-lg bg-${agent.color}-100 text-${agent.color}-600`}>{agent.icon}</div>
+                  <div
+                    className={`p-2 rounded-lg bg-${agent.color}-100 text-${agent.color}-600 ${agent.status === "active" ? "animate-pulse" : ""}`}
+                  >
+                    {agent.icon}
+                  </div>
                   <div>
                     <CardTitle className="text-lg">{agent.name}</CardTitle>
                     <Badge variant="outline" className="text-xs">
@@ -269,7 +273,7 @@ export function AgentsPage() {
                     <span className="text-xs font-medium">Processing...</span>
                     <span className="text-xs text-gray-600">75%</span>
                   </div>
-                  <Progress value={75} className="h-1" />
+                  <Progress value={75} className="h-1 animate-pulse" />
                 </div>
               )}
             </CardContent>
@@ -284,8 +288,14 @@ export function AgentsPage() {
           <CardDescription>How agents work together during a typical tutoring session</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            <div className="flex items-center gap-4 p-3 bg-blue-50 rounded-lg">
+          <div className="space-y-4 relative">
+            {/* Connection Lines */}
+            <div className="absolute top-1/4 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-0.5 h-[calc(25% - 2rem)] bg-gray-300 z-0" />
+            <div className="absolute top-2/4 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-0.5 h-[calc(25% - 2rem)] bg-gray-300 z-0" />
+            <div className="absolute top-3/4 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-0.5 h-[calc(25% - 2rem)] bg-gray-300 z-0" />
+            <div className="absolute top-4/4 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-0.5 h-[calc(25% - 2rem)] bg-gray-300 z-0" />
+
+            <div className="flex items-center gap-4 p-3 bg-blue-50 rounded-lg relative z-10">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
                   <span className="text-xs font-bold text-blue-600">1</span>
@@ -295,7 +305,7 @@ export function AgentsPage() {
               <p className="text-sm">Student uploads image or speaks problem → Voice/Vision processing</p>
             </div>
 
-            <div className="flex items-center gap-4 p-3 bg-green-50 rounded-lg">
+            <div className="flex items-center gap-4 p-3 bg-green-50 rounded-lg relative z-10">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
                   <span className="text-xs font-bold text-green-600">2</span>
@@ -305,7 +315,7 @@ export function AgentsPage() {
               <p className="text-sm">Problem interpretation → Content analysis and solution planning</p>
             </div>
 
-            <div className="flex items-center gap-4 p-3 bg-purple-50 rounded-lg">
+            <div className="flex items-center gap-4 p-3 bg-purple-50 rounded-lg relative z-10">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
                   <span className="text-xs font-bold text-purple-600">3</span>
@@ -315,7 +325,7 @@ export function AgentsPage() {
               <p className="text-sm">Teaching orchestration → Context management and step guidance</p>
             </div>
 
-            <div className="flex items-center gap-4 p-3 bg-orange-50 rounded-lg">
+            <div className="flex items-center gap-4 p-3 bg-orange-50 rounded-lg relative z-10">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
                   <span className="text-xs font-bold text-orange-600">4</span>
@@ -325,7 +335,7 @@ export function AgentsPage() {
               <p className="text-sm">Answer assessment → Feedback generation and delivery</p>
             </div>
 
-            <div className="flex items-center gap-4 p-3 bg-indigo-50 rounded-lg">
+            <div className="flex items-center gap-4 p-3 bg-indigo-50 rounded-lg relative z-10">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center">
                   <span className="text-xs font-bold text-indigo-600">5</span>

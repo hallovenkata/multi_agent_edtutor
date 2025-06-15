@@ -96,21 +96,54 @@ export function useEnhancedLLMAgents() {
     [configs, saveConfigs],
   )
 
-  // Voice control functions
-  const setVoiceEnabled = useCallback((enabled: boolean) => {
+  // Voice control functions with better error handling
+  const setVoiceEnabled = useCallback(async (enabled: boolean) => {
+    console.log("Setting voice enabled:", enabled)
+
+    if (enabled) {
+      // Test voice before enabling
+      const testResult = await voiceController.testVoice()
+      if (!testResult) {
+        console.warn("Voice test failed, but enabling anyway")
+      }
+    }
+
     voiceController.setEnabled(enabled)
   }, [])
 
   const setVoicePaused = useCallback((paused: boolean) => {
+    console.log("Setting voice paused:", paused)
     voiceController.setPaused(paused)
   }, [])
 
-  const speak = useCallback((message: string, priority: "high" | "normal" = "normal") => {
-    voiceController.speak(message, priority)
+  const speak = useCallback((message: string, priority: "high" | "normal" = "normal", type = "general") => {
+    console.log("Speak request:", { message: message.substring(0, 30), priority, type })
+
+    // Additional validation
+    if (!message || typeof message !== "string") {
+      console.warn("Invalid message for speech:", message)
+      return
+    }
+
+    if (message.trim().length === 0) {
+      console.warn("Empty message for speech")
+      return
+    }
+
+    try {
+      voiceController.speak(message, priority, type)
+    } catch (error) {
+      console.error("Error in speak function:", error)
+    }
   }, [])
 
   const stopVoice = useCallback(() => {
-    voiceController.stop()
+    console.log("Stopping voice")
+    try {
+      voiceController.stop()
+    } catch (error) {
+      console.error("Error stopping voice:", error)
+    }
   }, [])
 
   // Agent control functions

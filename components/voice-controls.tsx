@@ -3,7 +3,8 @@
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Volume2, VolumeX, Pause, Play, Square } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Volume2, VolumeX, Pause, Play, Square, AlertTriangle, CheckCircle } from "lucide-react"
 
 interface VoiceControlsProps {
   voiceStatus: {
@@ -12,6 +13,9 @@ interface VoiceControlsProps {
     processing: boolean
     queueLength: number
     currentMessage: string | null
+    initialized: boolean
+    voiceCount: number
+    synthesisAvailable: boolean
   }
   onToggleEnabled: () => void
   onTogglePaused: () => void
@@ -19,27 +23,90 @@ interface VoiceControlsProps {
 }
 
 export function VoiceControls({ voiceStatus, onToggleEnabled, onTogglePaused, onStop }: VoiceControlsProps) {
+  const getVoiceStatusColor = () => {
+    if (!voiceStatus.synthesisAvailable) return "text-red-600"
+    if (!voiceStatus.initialized) return "text-yellow-600"
+    if (voiceStatus.enabled) return "text-green-600"
+    return "text-gray-600"
+  }
+
+  const getVoiceStatusIcon = () => {
+    if (!voiceStatus.synthesisAvailable) return <AlertTriangle className="h-4 w-4" />
+    if (!voiceStatus.initialized) return <AlertTriangle className="h-4 w-4" />
+    if (voiceStatus.enabled) return <CheckCircle className="h-4 w-4" />
+    return <VolumeX className="h-4 w-4" />
+  }
+
+  const getVoiceStatusText = () => {
+    if (!voiceStatus.synthesisAvailable) return "Not Supported"
+    if (!voiceStatus.initialized) return "Initializing..."
+    if (voiceStatus.enabled) return "Ready"
+    return "Disabled"
+  }
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-sm">
+        <CardTitle className="flex items-center gap-2">
           {voiceStatus.enabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
           Voice Controls
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-4">
+        {/* Voice Status Alert */}
+        {!voiceStatus.synthesisAvailable && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              Speech synthesis is not supported in this browser. Voice features will be disabled.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {voiceStatus.synthesisAvailable && !voiceStatus.initialized && (
+          <Alert>
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              Voice system is initializing. Please wait a moment before using voice features.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Voice Status */}
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium">Status:</span>
+          <div className="flex items-center gap-2">
+            <div className={getVoiceStatusColor()}>{getVoiceStatusIcon()}</div>
+            <Badge variant="outline" className={getVoiceStatusColor()}>
+              {getVoiceStatusText()}
+            </Badge>
+          </div>
+        </div>
+
+        {/* Voice Info */}
+        {voiceStatus.synthesisAvailable && (
+          <div className="text-xs text-gray-600 space-y-1">
+            <div>Available voices: {voiceStatus.voiceCount}</div>
+            {voiceStatus.initialized && voiceStatus.voiceCount === 0 && (
+              <div className="text-yellow-600">⚠️ No voices loaded - speech may not work</div>
+            )}
+          </div>
+        )}
+
+        {/* Controls */}
         <div className="flex gap-2">
           <Button
             variant={voiceStatus.enabled ? "default" : "outline"}
             size="sm"
             onClick={onToggleEnabled}
             className="flex-1"
+            disabled={!voiceStatus.synthesisAvailable}
           >
             {voiceStatus.enabled ? <Volume2 className="h-3 w-3 mr-1" /> : <VolumeX className="h-3 w-3 mr-1" />}
             {voiceStatus.enabled ? "On" : "Off"}
           </Button>
 
-          {voiceStatus.enabled && (
+          {voiceStatus.enabled && voiceStatus.synthesisAvailable && (
             <>
               <Button
                 variant="outline"
@@ -62,7 +129,8 @@ export function VoiceControls({ voiceStatus, onToggleEnabled, onTogglePaused, on
           )}
         </div>
 
-        {voiceStatus.enabled && (
+        {/* Queue Status */}
+        {voiceStatus.enabled && voiceStatus.synthesisAvailable && (
           <div className="space-y-2 text-xs">
             <div className="flex items-center justify-between">
               <span>Status:</span>

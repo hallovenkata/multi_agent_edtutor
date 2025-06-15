@@ -1,6 +1,7 @@
 import { generateText, streamText } from "ai"
 import { openai, createOpenAI } from "@ai-sdk/openai"
 import { anthropic } from "@ai-sdk/anthropic"
+import { google } from "@ai-sdk/google"
 import type { LLMConfig, LLMMessage, LLMResponse } from "@/types/llm"
 
 export class LLMService {
@@ -30,6 +31,16 @@ export class LLMService {
         return anthropic(config.modelId, {
           apiKey: config.apiKey,
           baseURL: config.baseUrl || undefined,
+        })
+
+      case "gemini":
+        if (!config.apiKey) {
+          throw new Error("Google AI API key is required")
+        }
+        // Set the environment variable for Google AI SDK
+        process.env.GOOGLE_GENERATIVE_AI_API_KEY = config.apiKey
+        return google(config.modelId, {
+          apiKey: config.apiKey,
         })
 
       case "groq":

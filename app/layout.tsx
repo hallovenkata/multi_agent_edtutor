@@ -6,7 +6,7 @@ import "./globals.css"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "STEM Tutor AI - Multi-Agent Virtual Assistant",
+  title: "STEM Tutor - Multi-Agent Virtual Assistant",
   description:
     "AI-powered STEM tutoring with step-by-step problem solving across Science, Technology, Engineering, and Mathematics",
     generator: 'v0.dev'
