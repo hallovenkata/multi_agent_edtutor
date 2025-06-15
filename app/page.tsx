@@ -3,7 +3,6 @@
 import type React from "react"
 
 import { useState, useRef, useEffect, useCallback } from "react"
-import { useSearchParams, useRouter, usePathname } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -11,8 +10,6 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Progress } from "@/components/ui/progress"
 import { Upload, Camera, Loader2, AlertCircle, Atom, Calculator, Beaker, Cpu, Volume2, VolumeX } from "lucide-react"
-import { useUserData } from "@/hooks/use-user-data"
-import type { UserData } from "@/hooks/use-user-data"
 
 import { Onboarding } from "@/components/onboarding"
 import { AgentsPage } from "@/components/agents-page"
@@ -77,11 +74,6 @@ interface SessionStats {
 }
 
 export default function STEMTutorMVP() {
-  // Next.js navigation hooks
-  const router = useRouter()
-  const pathname = usePathname()
-  const searchParams = useSearchParams()
-
   // LLM Agents Hook
   const {
     configs,
@@ -103,45 +95,21 @@ export default function STEMTutorMVP() {
   // Parallel Agent Manager
   const [parallelManager, setParallelManager] = useState<ParallelAgentManager | null>(null)
 
-  // User data and onboarding state
-  const { userData, isLoading: isLoadingUserData } = useUserData()
-  const [isNewSession, setIsNewSession] = useState(false)
-  
   // App state
   const [isOnboarded, setIsOnboarded] = useState(false)
-  const [currentChatId, setCurrentChatId] = useState<string | null>(null)
   const [currentPage, setCurrentPage] = useState("tutor")
   const [viewMode, setViewMode] = useState<"setup" | "chat">("setup")
-  const [isLoading, setIsLoading] = useState(true)
-  
-  // Chat state management
-  const handleChatSelect = useCallback((problemId: string) => {
-    setCurrentChatId(problemId)
-    setCurrentPage("tutor")
-    setViewMode("chat")
-    
-    // Update URL with chat ID
-    const params = new URLSearchParams(searchParams?.toString() || '')
-    params.set('chatId', problemId)
-    router.push(`${pathname}?${params.toString()}`)
-  }, [searchParams, pathname, router])
-
-  // Load chat from URL on initial render
-  useEffect(() => {
-    const chatId = searchParams?.get('chatId')
-    if (chatId) {
-      setCurrentChatId(chatId)
 
   // Student Profile Agent (SPA) state
-  const [student, setStudent] = useState<Student>(() => ({
-    id: userData ? `user_${Date.now()}` : "",
-    name: userData?.name || "",
-    location: userData?.location || "",
-    gradeLevel: userData?.gradeLevel || "",
-    stemLevel: userData?.stemLevel || "",
-    preferredSubjects: userData?.preferredSubjects || [],
+  const [student, setStudent] = useState<Student>({
+    id: "student_001",
+    name: "",
+    location: "",
+    gradeLevel: "",
+    stemLevel: "",
+    preferredSubjects: [],
     sessionStartTime: new Date(),
-  }))
+  })
 
   // Session stats
   const [sessionStats, setSessionStats] = useState<SessionStats>({
@@ -186,47 +154,12 @@ export default function STEMTutorMVP() {
   >([])
   const [loadingExamples, setLoadingExamples] = useState(false)
 
-  // Initialize user data and app state
-  useEffect(() => {
-    const initializeApp = async () => {
-      if (!isLoadingUserData) {
-        if (userData) {
-          // User data exists, update student state
-          setStudent(prev => ({
-            ...prev,
-            name: userData.name,
-            location: userData.location,
-            gradeLevel: userData.gradeLevel,
-            stemLevel: userData.stemLevel,
-            preferredSubjects: userData.preferredSubjects,
-          }))
-          setIsOnboarded(true)
-          
-          // Initialize chat if needed
-          const chatId = searchParams?.get('chatId')
-          if (chatId) {
-            setCurrentChatId(chatId)
-            setViewMode('chat')
-            setCurrentPage('tutor')
-          }
-        } else {
-          // No user data, show onboarding
-          setIsOnboarded(false)
-        }
-        setIsLoading(false)
-      }
-    }
-
-    initializeApp()
-  }, [userData, isLoadingUserData, searchParams])
-
   // Initialize parallel manager when config changes
   useEffect(() => {
-    if (isConfigured && agents) {
-      const manager = new ParallelAgentManager(agents)
-      setParallelManager(manager)
+    if (defaultConfig) {
+      setParallelManager(new ParallelAgentManager(defaultConfig))
     }
-  }, [isConfigured, agents])
+  }, [defaultConfig])
 
   // Update session time and load progress
   useEffect(() => {
@@ -259,185 +192,625 @@ export default function STEMTutorMVP() {
   }, [isOnboarded, agents.cva, isConfigured])
 
   // Handle onboarding completion
-  const handleOnboardComplete = (userData: UserData) => {
+  const handleOnboardingComplete = async (userData: {
+    name: string
+    location: string
+    gradeLevel: string
+    stemLevel: string
+    preferredSubjects: string[]
+  }) => {
+    const studentData = {
+      ...userData,
+      id: `student_${Date.now()}`,
+      sessionStartTime: new Date(),
+    }
+
     setStudent((prev) => ({
       ...prev,
-      name: userData.name,
-      location: userData.location,
-      gradeLevel: userData.gradeLevel,
-      stemLevel: userData.stemLevel,
-      preferredSubjects: userData.preferredSubjects,
-      sessionStartTime: new Date(),
+      ...studentData,
     }))
     setIsOnboarded(true)
-    setIsNewSession(false)
-  }
 
-  const handleStartNewSession = () => {
-    setIsNewSession(true)
-    setIsOnboarded(false)
-  }
+    // Load student progress
+    learningHistoryManager.loadStudentProgress?.(studentData.id)
 
-  // Chat state management
+    // Generate personalized greeting using CVA
+    if (agents.cva && isConfigured) {
+      try {
+        setProcessingAgent("CVA")
+        speakMessage("Generating personalized greeting...", "normal", "status")
+        const greeting = await agents.cva.generateGreeting(userData.name, userData.stemLevel)
+        addAgentResponse("CVA", greeting, "greeting")
 
-  try {
-    setProcessingAgent("VA")
-    speakMessage("Extracting problem from image...", "normal", "status")
-    const mockOcrText = "Solve for x: 2x + 5 = 11 (Chapter 3, Exercise 4)"
+        setTimeout(() => {
+          addAgentResponse(
+            "CVA",
+            "To get started, either upload an image of a STEM problem or type one manually below. I'll analyze it and we'll solve it together step by step in an interactive chat!",
+            "instruction",
+          )
+          speakMessage("Upload an image or type a problem to get started", "normal", "instruction")
+        }, 1000)
 
-    const extractedProblem = await agents.va.extractProblem(mockOcrText)
-    setExtractedProblem(extractedProblem)
-
-    addAgentResponse("VA", `I've extracted this problem from your image: "${extractedProblem}"`, "instruction")
-    speakMessage("I found a problem in your image", "normal", "instruction")
-
-    const validation = await agents.va.validateProblem(extractedProblem)
-    if (validation.isValid) {
-      processSTEMProblem(extractedProblem, "Mathematics")
-    } else {
-      addAgentResponse("VA", `Problem validation failed: ${validation.reason}`, "error")
+        speakMessage(greeting, "high", "greeting")
+      } catch (error) {
+        console.error("Error generating greeting:", error)
+        const fallbackGreeting = `Hello ${userData.name}! Welcome to STEM Tutor. I'm here to help you with science, technology, engineering, and math problems step by step.`
+        addAgentResponse("CVA", fallbackGreeting, "greeting")
+        speakMessage(fallbackGreeting, "high", "greeting")
+      } finally {
+        setProcessingAgent(null)
+      }
     }
-  } catch (error) {
-    console.error("Vision Agent error:", error)
-    addAgentResponse(
-      "VA",
-      "Sorry, I couldn't process the image. Please try again or enter the problem manually.",
-      "error",
-    )
-  } finally {
-    setProcessingAgent(null)
-    setIsProcessing(false)
-  }
-}
-
-const addAgentResponse = (agent: string, message: string, type: AgentResponse["type"], streaming = false) => {
-  const response: AgentResponse = { agent, message, type, streaming, timestamp: new Date() }
-  setSessionHistory((prev) => [...prev, response])
-}
-
-const handleManualInput = () => {
-  if (!extractedProblem.trim()) return
-
-  setIsProcessing(true)
-  setProcessingAgent("CA")
-  addAgentResponse("CA", `Analyzing your problem: "${extractedProblem}"`, "instruction")
-  speakMessage("Analyzing your problem", "normal", "instruction")
-
-  let subject = "Mathematics"
-  if (extractedProblem.toLowerCase().includes("velocity") || extractedProblem.toLowerCase().includes("force")) {
-    subject = "Physics"
-  } else if (
-    extractedProblem.toLowerCase().includes("balance") ||
-    extractedProblem.toLowerCase().includes("reaction")
-  ) {
-    subject = "Chemistry"
-  } else if (
-    extractedProblem.toLowerCase().includes("photosynthesis") ||
-    extractedProblem.toLowerCase().includes("cell")
-  ) {
-    subject = "Biology"
   }
 
-  processSTEMProblem(extractedProblem, subject)
-}
+  // Load dynamic examples from LLM
+  const loadDynamicExamples = async () => {
+    if (!agents.cva || !isConfigured || loadingExamples) return
 
-const resetSession = () => {
-  // Complete current session
-  if (currentSessionId) {
-    learningHistoryManager.completeSession("abandoned")
+    setLoadingExamples(true)
+    try {
+      const subjects =
+        student.preferredSubjects.length > 0 ? student.preferredSubjects : ["Mathematics", "Physics", "Chemistry"]
+      const examples = []
+
+      for (const subject of subjects.slice(0, 3)) {
+        try {
+          const subjectExamples = await agents.cva.generateSTEMExamples(subject, student.stemLevel)
+          if (subjectExamples.length > 0) {
+            examples.push({
+              subject,
+              problem: subjectExamples[0],
+              icon: getSubjectIcon(subject),
+            })
+          }
+        } catch (error) {
+          console.error(`Error loading examples for ${subject}:`, error)
+          examples.push({
+            subject,
+            problem: getFallbackProblem(subject),
+            icon: getSubjectIcon(subject),
+          })
+        }
+      }
+
+      setDynamicExamples(examples.length > 0 ? examples : getStaticExamples())
+    } catch (error) {
+      console.error("Error loading dynamic examples:", error)
+      setDynamicExamples(getStaticExamples())
+    } finally {
+      setLoadingExamples(false)
+    }
   }
 
-  setCurrentProblem(null)
-  setCurrentStep(0)
-  setUserAnswer("")
-  setShowHint(false)
-  setUploadedImage(null)
-  setExtractedProblem("")
-  setIsPaused(false)
-  setViewMode("setup")
-  setCurrentSessionId(null)
-  setSessionHistory([
-    {
-      agent: "CVA",
-      message: `Welcome back ${student.name}! Ready for another STEM problem?`,
-      type: "greeting",
-      timestamp: new Date(),
+  // Enhanced progress tracking
+  const handleProgressUpdate = (agent: string, status: string, progress = 0) => {
+    setProcessingAgent(agent)
+    setProcessingStatus((prev) => ({ ...prev, [agent]: status }))
+    setProcessingProgress((prev) => ({ ...prev, [agent]: progress }))
+  }
+
+  // Content Agent (CA) - Enhanced parallel processing
+  const processSTEMProblem = async (problemText: string, subject = "Mathematics") => {
+    if (!parallelManager || !isConfigured) {
+      addAgentResponse("CA", "Please configure your LLM settings to enable interactive problem solving.", "error")
+      return
+    }
+
+    try {
+      setIsProcessing(true)
+      speakMessage("Analyzing the problem...", "normal", "status")
+
+      // Use parallel processing for faster analysis
+      const result = await parallelManager.analyzeProblemParallel(problemText, student.stemLevel, handleProgressUpdate)
+
+      const problem: STEMProblem = {
+        id: `stem_${Date.now()}`,
+        original: problemText,
+        subject: result.analysis.subject || subject,
+        type: result.analysis.type,
+        difficulty: result.analysis.difficulty,
+        concepts: result.analysis.concepts,
+        steps: result.steps.map((step) => ({
+          ...step,
+          content: step.equation,
+          userInput: undefined,
+          isCorrect: undefined,
+          attempts: 0,
+          requiresConfirmation: true,
+        })),
+        currentStep: 0,
+      }
+
+      setCurrentProblem(problem)
+      setCurrentStep(0)
+
+      // Start learning session
+      const sessionId = learningHistoryManager.startSession(student.id, problem)
+      setCurrentSessionId(sessionId)
+
+      addAgentResponse(
+        "CA",
+        `Problem analyzed: ${problem.type} (${problem.difficulty} level) with ${problem.steps.length} steps. Starting interactive learning session...`,
+        "instruction",
+      )
+      speakMessage("Problem analyzed. Starting interactive learning session.", "normal", "instruction")
+
+      // Start teaching immediately
+      startTeaching(problem, result.initialGuidance)
+    } catch (error) {
+      console.error("Content Agent error:", error)
+      addAgentResponse("CA", "Sorry, I couldn't analyze this problem. Please try a different one.", "error")
+      speakMessage("Sorry, I couldn't analyze this problem.", "normal", "error")
+    } finally {
+      setIsProcessing(false)
+      setProcessingAgent(null)
+      setProcessingProgress({})
+      setProcessingStatus({})
+    }
+  }
+
+  // Teaching Agent (TA) - Start teaching with initial guidance
+  const startTeaching = async (problem: STEMProblem, initialGuidance?: string) => {
+    try {
+      setViewMode("chat")
+
+      addAgentResponse(
+        "TA",
+        `🎓 Welcome to your interactive ${problem.subject} lesson! I'm your Teaching Agent and I'll guide you through solving: "${problem.original}"`,
+        "instruction",
+      )
+      speakMessage(`Starting your ${problem.subject} lesson`, "high", "instruction")
+
+      if (initialGuidance) {
+        addAgentResponse("TA", initialGuidance, "instruction")
+        speakMessage(initialGuidance, "normal", "instruction")
+      }
+    } catch (error) {
+      console.error("Teaching Agent error:", error)
+      const fallbackMessage = `Let's solve this ${problem.subject} problem: "${problem.original}" step by step.`
+      addAgentResponse("TA", fallbackMessage, "instruction")
+      speakMessage(fallbackMessage, "normal", "instruction")
+      setViewMode("chat")
+    }
+  }
+
+  // Enhanced chat submit with parallel processing
+  const handleChatSubmitAnswer = async (answer: string) => {
+    if (!currentProblem || !isConfigured || isPaused || !parallelManager) return
+
+    const currentStepData = currentProblem.steps[currentStep]
+    currentStepData.attempts += 1
+
+    // Record the attempt in learning history
+    learningHistoryManager.recordStepAttempt(currentStep + 1, answer, false) // We'll update this after assessment
+
+    try {
+      setProcessingAgent("AA")
+
+      // Use parallel processing for faster feedback
+      const result = await parallelManager.generateFeedbackParallel(
+        answer,
+        currentStepData.description,
+        currentStepData.content,
+        student.stemLevel,
+        currentStepData.attempts,
+        (agent, status) => handleProgressUpdate(agent, status),
+      )
+
+      currentStepData.userInput = answer
+      currentStepData.isCorrect = result.assessment?.isCorrect || false
+
+      // Update learning history with correct result
+      learningHistoryManager.recordStepAttempt(
+        currentStep + 1,
+        answer,
+        result.assessment?.isCorrect || false,
+        result.hint ? 1 : 0,
+      )
+
+      // Add feedback to chat
+      if ((window as any).chatInterface) {
+        ; (window as any).chatInterface.addFeedbackMessage(
+          result.feedback,
+          result.assessment?.isCorrect || false,
+          currentStepData.attempts,
+        )
+      }
+
+      if (result.assessment?.isCorrect) {
+        // Move to next step or complete problem
+        if (currentStep < currentProblem.steps.length - 1) {
+          setTimeout(() => {
+            setCurrentStep(currentStep + 1)
+          }, 2000)
+        } else {
+          // Problem completed
+          learningHistoryManager.completeSession("completed")
+          setSessionStats((prev) => ({
+            ...prev,
+            problemsSolved: prev.problemsSolved + 1,
+            streak: prev.streak + 1,
+          }))
+        }
+      }
+
+      // Add hint if provided
+      if (result.hint && (window as any).chatInterface) {
+        setTimeout(() => {
+          ; (window as any).chatInterface.addHintMessage(result.hint)
+        }, 1000)
+      }
+    } catch (error) {
+      console.error("Error processing user input:", error)
+    } finally {
+      setProcessingAgent(null)
+      setProcessingProgress({})
+      setProcessingStatus({})
+    }
+  }
+
+  const handleChatRequestHint = async () => {
+    if (!currentProblem || !agents.nlg || !isConfigured) return
+
+    try {
+      setProcessingAgent("NLG")
+      const hint = await agents.nlg.generateHint(
+        currentProblem.steps[currentStep].description,
+        student.stemLevel,
+        currentProblem.steps[currentStep].attempts,
+      )
+
+      // Record hint usage
+      learningHistoryManager.recordStepAttempt(currentStep + 1, "", false, 1)
+
+      if ((window as any).chatInterface) {
+        ; (window as any).chatInterface.addHintMessage(hint)
+      }
+    } catch (error) {
+      console.error("Error generating hint:", error)
+    } finally {
+      setProcessingAgent(null)
+    }
+  }
+
+  // Enhanced voice control
+  const handleVoiceToggle = () => {
+    const newState = !voiceStatus.enabled
+    setVoiceEnabled(newState)
+    console.log("Voice toggled to:", newState)
+
+    if (newState) {
+      setTimeout(() => {
+        speakMessage("Voice is now enabled", "high", "confirmation")
+      }, 500)
+    }
+  }
+
+  const handleVoicePause = () => {
+    setVoicePaused(!voiceStatus.paused)
+  }
+
+  // Enhanced speak message with type information
+  const speakMessage = useCallback(
+    (message: string, priority: "high" | "normal" = "normal", type = "general") => {
+      console.log("speakMessage called:", { message: message.substring(0, 30), priority, type })
+      speak(message, priority, type)
     },
-  ])
-  speakMessage("Ready for a new problem?", "normal", "greeting")
-}
-
-const handleLoadProblem = (problem: string) => {
-  setExtractedProblem(problem)
-  processSTEMProblem(problem)
-  setCurrentPage("tutor")
-}
-
-  // Handle chat selection
-  const handleChatSelect = useCallback((problemId: string) => {
-    setCurrentChatId(problemId);
-    setCurrentPage("tutor");
-    setViewMode("chat");
-    
-    // Update URL with chat ID
-    const params = new URLSearchParams(searchParams?.toString() || '');
-    params.set('chatId', problemId);
-    router.push(`${pathname}?${params.toString()}`);
-  }, [searchParams, pathname, router]);
-
-  // Load chat from URL on initial render
-  useEffect(() => {
-    const chatId = searchParams?.get('chatId');
-    if (chatId) {
-      setCurrentChatId(chatId);
-      setViewMode('chat');
-      setCurrentPage('tutor');
-    }
-  }, [searchParams]);
-
-// Here you would typically load the chat history for the selected problemId
-// For example: loadChatHistory(problemId);
-
-// Show onboarding if not completed
-if (!isOnboarded) {
-  return <Onboarding onComplete={handleOnboardingComplete} />
-}
-
-// Show chat interface when in chat mode
-if (viewMode === "chat" && currentProblem) {
-  return (
-    <ChatInterface
-      key={currentChatId || 'default'}
-      problem={currentProblem}
-      currentStep={currentStep}
-      onBack={handleBackToSetup}
-      onSubmitAnswer={handleChatSubmitAnswer}
-      onRequestHint={handleChatRequestHint}
-      onNextStep={handleNextStep}
-      onPreviousStep={handlePreviousStep}
-      onExplainStep={handleExplainStep}
-      onResetProblem={resetSession}
-      isProcessing={processingAgent !== null}
-      processingAgent={processingAgent}
-      voiceEnabled={voiceStatus.enabled}
-      onSpeak={speakMessage}
-      isListening={isListening}
-      onStartListening={startListening}
-      onStopListening={() => setIsListening(false)}
-      studentLevel={student.stemLevel}
-    />
+    [speak],
   )
-}
 
-// Move the state declaration to the top with other state declarations
-// Student profile data
-const studentProfile = {
-  id: student.id,
-  name: student.name,
-  gradeLevel: student.gradeLevel,
-  stemLevel: student.stemLevel,
-  preferredSubjects: student.preferredSubjects,
-}
+  const handleBackToSetup = () => {
+    // Complete current session if active
+    if (currentSessionId) {
+      learningHistoryManager.completeSession("abandoned")
+    }
+
+    setViewMode("setup")
+    setCurrentProblem(null)
+    setCurrentStep(0)
+    setCurrentPage("tutor")
+    setCurrentSessionId(null)
+  }
+
+  // Iterative control functions
+  const handleNextStep = () => {
+    if (!currentProblem || currentStep >= currentProblem.steps.length - 1) return
+    setCurrentStep(currentStep + 1)
+  }
+
+  const handlePreviousStep = () => {
+    if (currentStep > 0) {
+      setCurrentStep(currentStep - 1)
+    }
+  }
+
+  const handleExplainStep = async () => {
+    if (!currentProblem || !agents.nlg || !isConfigured) return
+
+    try {
+      setProcessingAgent("NLG")
+      const explanation = await agents.nlg.generateExplanation(
+        currentProblem.steps[currentStep].description,
+        student.stemLevel,
+      )
+
+      if (viewMode === "chat" && (window as any).chatInterface) {
+        ; (window as any).chatInterface.addHintMessage(`Detailed explanation: ${explanation}`)
+      }
+    } catch (error) {
+      console.error("Error generating explanation:", error)
+    } finally {
+      setProcessingAgent(null)
+    }
+  }
+
+  // Get STEM subject icon
+  const getSubjectIcon = (subject: string) => {
+    switch (subject.toLowerCase()) {
+      case "mathematics":
+        return <Calculator className="h-4 w-4" />
+      case "physics":
+        return <Atom className="h-4 w-4" />
+      case "chemistry":
+        return <Beaker className="h-4 w-4" />
+      case "biology":
+        return <Atom className="h-4 w-4" />
+      case "engineering":
+        return <Cpu className="h-4 w-4" />
+      case "computer-science":
+      case "computer science":
+        return <Cpu className="h-4 w-4" />
+      default:
+        return <Atom className="h-4 w-4" />
+    }
+  }
+
+  // Get fallback problem for a subject
+  const getFallbackProblem = (subject: string): string => {
+    const fallbacks: Record<string, string> = {
+      mathematics: "Solve for x: 2x + 5 = 11",
+      physics: "Calculate the velocity of an object with mass 5kg and kinetic energy 100J",
+      chemistry: "Balance the equation: H₂ + O₂ → H₂O",
+      biology: "Explain the process of photosynthesis in plants",
+      engineering: "Design a simple lever system with mechanical advantage of 3",
+      "computer-science": "Write an algorithm to sort an array of numbers",
+    }
+
+    const key = subject.toLowerCase().replace(/[-\s]/g, "")
+    return fallbacks[key] || fallbacks.mathematics
+  }
+
+  // Static fallback examples
+  const getStaticExamples = () => {
+    return [
+      { subject: "Mathematics", problem: "Solve for x: 2x + 5 = 11", icon: <Calculator className="h-4 w-4" /> },
+      {
+        subject: "Physics",
+        problem: "Calculate the velocity of an object with mass 5kg and kinetic energy 100J",
+        icon: <Atom className="h-4 w-4" />,
+      },
+      { subject: "Chemistry", problem: "Balance the equation: H₂ + O₂ → H₂O", icon: <Beaker className="h-4 w-4" /> },
+    ]
+  }
+
+  // Get current examples (dynamic or static)
+  const getCurrentExamples = () => {
+    return dynamicExamples.length > 0 ? dynamicExamples : getStaticExamples()
+  }
+
+  // Conversational Voice Agent (CVA) - Speech-to-Text
+  const startListening = () => {
+    if (!("webkitSpeechRecognition" in window)) {
+      addAgentResponse("CVA", "Speech recognition not supported in this browser.", "error")
+      return
+    }
+
+    const recognition = new (window as any).webkitSpeechRecognition()
+    recognition.continuous = false
+    recognition.interimResults = false
+    recognition.lang = "en-US"
+
+    recognition.onstart = () => {
+      setIsListening(true)
+      speakMessage("I'm listening", "high", "confirmation")
+    }
+    recognition.onend = () => setIsListening(false)
+
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript
+      setUserAnswer(transcript)
+      addAgentResponse("User", transcript, "question")
+
+      if (viewMode === "chat") {
+        handleChatSubmitAnswer(transcript)
+      }
+    }
+
+    recognition.onerror = () => {
+      setIsListening(false)
+      addAgentResponse("CVA", "Sorry, I couldn't hear you clearly. Please try again.", "error")
+      speakMessage("Sorry, I couldn't hear you clearly", "normal", "error")
+    }
+
+    recognition.start()
+  }
+
+  // Vision Agent (VA) - Simulated OCR
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setIsProcessing(true)
+    const reader = new FileReader()
+
+    reader.onload = (e) => {
+      const imageUrl = e.target?.result as string
+      setUploadedImage(imageUrl)
+
+      setTimeout(() => {
+        simulateOCR(imageUrl)
+      }, 2000)
+    }
+
+    reader.readAsDataURL(file)
+  }
+
+  // Vision Agent (VA) - Simulated OCR Processing with LLM
+  const simulateOCR = async (imageUrl: string) => {
+    if (!agents.va || !isConfigured) {
+      const sampleProblems = getCurrentExamples()
+      const randomProblem = sampleProblems[Math.floor(Math.random() * sampleProblems.length)]
+      setExtractedProblem(randomProblem.problem)
+      addAgentResponse(
+        "VA",
+        `I've extracted this ${randomProblem.subject} problem from your image: "${randomProblem.problem}"`,
+        "instruction",
+      )
+      speakMessage("I found a problem in your image", "normal", "instruction")
+      processSTEMProblem(randomProblem.problem, randomProblem.subject)
+      setIsProcessing(false)
+      return
+    }
+
+    try {
+      setProcessingAgent("VA")
+      speakMessage("Extracting problem from image...", "normal", "status")
+      const mockOcrText = "Solve for x: 2x + 5 = 11 (Chapter 3, Exercise 4)"
+
+      const extractedProblem = await agents.va.extractProblem(mockOcrText)
+      setExtractedProblem(extractedProblem)
+
+      addAgentResponse("VA", `I've extracted this problem from your image: "${extractedProblem}"`, "instruction")
+      speakMessage("I found a problem in your image", "normal", "instruction")
+
+      const validation = await agents.va.validateProblem(extractedProblem)
+      if (validation.isValid) {
+        processSTEMProblem(extractedProblem, "Mathematics")
+      } else {
+        addAgentResponse("VA", `Problem validation failed: ${validation.reason}`, "error")
+      }
+    } catch (error) {
+      console.error("Vision Agent error:", error)
+      addAgentResponse(
+        "VA",
+        "Sorry, I couldn't process the image. Please try again or enter the problem manually.",
+        "error",
+      )
+    } finally {
+      setProcessingAgent(null)
+      setIsProcessing(false)
+    }
+  }
+
+  const addAgentResponse = (agent: string, message: string, type: AgentResponse["type"], streaming = false) => {
+    const response: AgentResponse = { agent, message, type, streaming, timestamp: new Date() }
+    setSessionHistory((prev) => [...prev, response])
+  }
+
+  const handleManualInput = () => {
+    if (!extractedProblem.trim()) return
+
+    setIsProcessing(true)
+    setProcessingAgent("CA")
+    addAgentResponse("CA", `Analyzing your problem: "${extractedProblem}"`, "instruction")
+    speakMessage("Analyzing your problem", "normal", "instruction")
+
+    let subject = "Mathematics"
+    if (extractedProblem.toLowerCase().includes("velocity") || extractedProblem.toLowerCase().includes("force")) {
+      subject = "Physics"
+    } else if (
+      extractedProblem.toLowerCase().includes("balance") ||
+      extractedProblem.toLowerCase().includes("reaction")
+    ) {
+      subject = "Chemistry"
+    } else if (
+      extractedProblem.toLowerCase().includes("photosynthesis") ||
+      extractedProblem.toLowerCase().includes("cell")
+    ) {
+      subject = "Biology"
+    }
+
+    processSTEMProblem(extractedProblem, subject)
+  }
+
+  const resetSession = () => {
+    // Complete current session
+    if (currentSessionId) {
+      learningHistoryManager.completeSession("abandoned")
+    }
+
+    setCurrentProblem(null)
+    setCurrentStep(0)
+    setUserAnswer("")
+    setShowHint(false)
+    setUploadedImage(null)
+    setExtractedProblem("")
+    setIsPaused(false)
+    setViewMode("setup")
+    setCurrentSessionId(null)
+    setSessionHistory([
+      {
+        agent: "CVA",
+        message: `Welcome back ${student.name}! Ready for another STEM problem?`,
+        type: "greeting",
+        timestamp: new Date(),
+      },
+    ])
+    speakMessage("Ready for a new problem?", "normal", "greeting")
+  }
+
+  const handleLoadProblem = (problem: string) => {
+    setExtractedProblem(problem)
+    processSTEMProblem(problem)
+    setCurrentPage("tutor")
+  }
+
+  // Show onboarding if not completed
+  if (!isOnboarded) {
+    return <Onboarding onComplete={handleOnboardingComplete} />
+  }
+
+  // Show chat interface when in chat mode
+  if (viewMode === "chat" && currentProblem) {
+    return (
+      <ChatInterface
+        problem={currentProblem}
+        currentStep={currentStep}
+        onBack={handleBackToSetup}
+        onSubmitAnswer={handleChatSubmitAnswer}
+        onRequestHint={handleChatRequestHint}
+        onNextStep={handleNextStep}
+        onPreviousStep={handlePreviousStep}
+        onExplainStep={handleExplainStep}
+        onResetProblem={resetSession}
+        isProcessing={processingAgent !== null}
+        processingAgent={processingAgent}
+        voiceEnabled={voiceStatus.enabled}
+        onSpeak={speakMessage}
+        isListening={isListening}
+        onStartListening={startListening}
+        onStopListening={() => setIsListening(false)}
+        studentLevel={student.stemLevel}
+      />
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Enhanced Loading Overlay with Progress */}
+      <LoadingOverlay
+        isVisible={isProcessing}
+        processingAgent={processingAgent}
+        message={processingAgent ? processingStatus[processingAgent] : "Processing..."}
+        progress={processingAgent ? processingProgress[processingAgent] : undefined}
+      />
+
+      {/* Left Sidebar */}
+      <EnhancedNavigation
+        currentPage={currentPage}
+        onPageChange={setCurrentPage}
+        student={student}
+        currentProblem={currentProblem}
         currentStep={currentStep}
         sessionStats={sessionStats}
         processingAgent={processingAgent}
@@ -448,28 +821,6 @@ const studentProfile = {
       <div className="flex-1 flex flex-col transition-all duration-300">
         {/* Top Header */}
         <div className="bg-white border-b border-gray-200 px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <h1 className="text-2xl font-bold text-gray-900">STEM Tutor</h1>
-              <Badge variant="outline" className="capitalize">
-                {currentPage.replace("-", " ")}
-              </Badge>
-            </div>
-            <div className="flex items-center gap-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleVoiceToggle}
-                className={voiceStatus.enabled ? "bg-green-50 border-green-200" : ""}
-              >
-              {voiceStatus.enabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-              Voice {voiceStatus.enabled ? "On" : "Off"}
-            </Button>
-            <LLMConfigModal
-              configs={configs}
-              onConfigsChange={saveConfigs}
-              onDefaultConfigChange={setDefaultConfig}
-            />
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <h1 className="text-2xl font-bold text-gray-900">STEM Tutor</h1>
