@@ -219,23 +219,26 @@ export default function STEMTutorMVP() {
 
   // useEffect to load user data
   useEffect(() => {
-    if (!isUserDataLoading && userData) {
-      // If user data is loaded and is available
-      setStudent(prevStudent => ({
-        ...prevStudent, // Preserve existing fields like 'id'
-        name: userData.name,
-        location: userData.location,
-        gradeLevel: userData.gradeLevel,
-        stemLevel: userData.stemLevel,
-        preferredSubjects: userData.preferredSubjects,
-        // Use lastSession for sessionStartTime if available
-        sessionStartTime: userData.lastSession ? new Date(userData.lastSession) : prevStudent.sessionStartTime,
-      }))
-      setIsOnboarded(true) // Set onboarded status to true to bypass the Onboarding component
-
-      // Note: Persisting and restoring student.id for learningHistoryManager is a potential follow-up.
+    if (!isUserDataLoading) { // Only proceed once the loading attempt from useUserData is complete
+      if (userData) {
+        // User data was successfully loaded and is valid (according to useUserData hook's validation)
+        setStudent(prevStudent => ({
+          ...prevStudent,
+          name: userData.name,
+          location: userData.location,
+          gradeLevel: userData.gradeLevel,
+          stemLevel: userData.stemLevel,
+          preferredSubjects: userData.preferredSubjects,
+          sessionStartTime: userData.lastSession ? new Date(userData.lastSession) : prevStudent.sessionStartTime,
+        }));
+        setIsOnboarded(true); // Bypass the onboarding screen
+      } else {
+        // No valid user data was found after attempting to load from localStorage.
+        // Ensure onboarding is shown.
+        setIsOnboarded(false);
+      }
     }
-  }, [userData, isUserDataLoading, setStudent, setIsOnboarded])
+  }, [userData, isUserDataLoading, setStudent, setIsOnboarded]);
 
   // Handle onboarding completion
   const handleOnboardingComplete = async (userData: {
