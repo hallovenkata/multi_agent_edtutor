@@ -92,9 +92,31 @@ export function useChatPersistence(problemId: string) {
           const data = JSON.parse(localStorage.getItem(key) || '[]');
           if (Array.isArray(data) && data.length > 0 && data[0].content) {
             const lastMessage = data[data.length - 1];
+            const problemId = key.replace('chat_', '');
+
+            // New logic to get original problem text:
+            const problemDetailKey = `problem_detail_${problemId}`;
+            const problemDetailString = localStorage.getItem(problemDetailKey);
+            let sessionTitle = `Problem ID: ${problemId.substring(0, 6)}`; // Default title
+
+            if (problemDetailString) {
+              try {
+                const problemDetail = JSON.parse(problemDetailString);
+                if (problemDetail && typeof problemDetail.original === 'string' && problemDetail.original.trim() !== '') {
+                  sessionTitle = problemDetail.original;
+                } else {
+                  // If problemDetail.original is missing or empty, keep a more informative fallback
+                  sessionTitle = `Problem (Details Incomplete): ${problemId.substring(0, 6)}`;
+                }
+              } catch (e) {
+                console.error(`Error parsing problem detail for ${problemId}:`, e);
+                sessionTitle = `Problem (Error Loading Details): ${problemId.substring(0, 6)}`;
+              }
+            }
+
             sessions.push({
-              problemId: key.replace('chat_', ''),
-              title: `Chat ${key.replace('chat_', '').substring(0, 6)}`,
+              problemId: problemId,
+              title: sessionTitle, // Use the retrieved or fallback original problem text
               lastUpdated: new Date(lastMessage.timestamp || Date.now()),
               preview: typeof data[0].content === 'string' 
                 ? data[0].content.substring(0, 30) + (data[0].content.length > 30 ? '...' : '')

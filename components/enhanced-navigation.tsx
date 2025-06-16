@@ -80,50 +80,50 @@ export function EnhancedNavigation({
 }: EnhancedNavigationProps) {
   const router = useRouter()
   const pathname = usePathname()
-  const [sessions, setSessions] = useState<ChatSession[]>([])
-  const { getActiveSessions } = useChatPersistence('')
-  const [selectedChat, setSelectedChat] = useState<string | null>(null)
+  // const [sessions, setSessions] = useState<ChatSession[]>([])
+  // const { getActiveSessions } = useChatPersistence('') // Assuming this specific instance is only for the dropdown
+  // const [selectedChat, setSelectedChat] = useState<string | null>(null)
   const searchParams = useSearchParamsHook()
-  const chatId = searchParams.get('chatId')
+  // const chatId = searchParams.get('chatId')
 
-  useEffect(() => {
-    const activeSessions = getActiveSessions()
-    setSessions(activeSessions)
+  // useEffect(() => {
+  //   const activeSessions = getActiveSessions()
+  //   setSessions(activeSessions)
     
-    // Set the selected chat from URL if it exists in active sessions
-    if (chatId && !selectedChat) {
-      const chatExists = activeSessions.some(session => session.problemId === chatId)
-      if (chatExists) {
-        setSelectedChat(chatId)
-      }
-    }
+  //   // Set the selected chat from URL if it exists in active sessions
+  //   if (chatId && !selectedChat) {
+  //     const chatExists = activeSessions.some(session => session.problemId === chatId)
+  //     if (chatExists) {
+  //       setSelectedChat(chatId)
+  //     }
+  //   }
     
-    const interval = setInterval(() => {
-      setSessions(getActiveSessions())
-    }, 30000)
+  //   const interval = setInterval(() => {
+  //     setSessions(getActiveSessions())
+  //   }, 30000)
     
-    return () => clearInterval(interval)
-  }, [getActiveSessions, chatId, selectedChat])
+  //   return () => clearInterval(interval)
+  // }, [getActiveSessions, chatId, selectedChat])
 
-  const formatTimeAgo = (date: Date) => {
-    const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000)
-    const intervals = {
-      year: 31536000,
-      month: 2592000,
-      week: 604800,
-      day: 86400,
-      hour: 3600,
-      minute: 60
-    }
+  // const formatTimeAgo = (date: Date) => {
+  //   const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000)
+  //   const intervals = {
+  //     year: 31536000,
+  //     month: 2592000,
+  //     week: 604800,
+  //     day: 86400,
+  //     hour: 3600,
+  //     minute: 60
+  //   }
 
-    for (const [unit, secondsInUnit] of Object.entries(intervals)) {
-      const interval = Math.floor(seconds / secondsInUnit)
-      if (interval >= 1) {
-        return `${interval}${unit[0]} ago`
-      }
-    }
-    return 'Just now'
-  }
+  //   for (const [unit, secondsInUnit] of Object.entries(intervals)) {
+  //     const interval = Math.floor(seconds / secondsInUnit)
+  //     if (interval >= 1) {
+  //       return `${interval}${unit[0]} ago`
+  //     }
+  //   }
+  //   return 'Just now'
+  // }
 
   const navItems = [
     {
@@ -247,7 +247,7 @@ export function EnhancedNavigation({
           <CardContent className="p-4">
             <div className="flex justify-between items-center mb-3">
               <h3 className="font-semibold">Navigation</h3>
-              <DropdownMenu>
+              {/* <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button 
                     variant="ghost" 
@@ -299,7 +299,7 @@ export function EnhancedNavigation({
                     </div>
                   )}
                 </DropdownMenuContent>
-              </DropdownMenu>
+              </DropdownMenu> */}
             </div>
             <div className="space-y-2">
               {navItems.map((item) => {
