@@ -3,6 +3,7 @@
 import type React from "react"
 
 import { useState, useRef, useEffect, useCallback } from "react"
+import { useUserData, type UserData } from "@/hooks/use-user-data"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -95,6 +96,9 @@ export default function STEMTutorMVP() {
   // Parallel Agent Manager
   const [parallelManager, setParallelManager] = useState<ParallelAgentManager | null>(null)
 
+  // UserData hook
+  const { userData, isLoading: isUserDataLoading } = useUserData()
+
   // App state
   const [isOnboarded, setIsOnboarded] = useState(false)
   const [currentPage, setCurrentPage] = useState("tutor")
@@ -163,26 +167,48 @@ export default function STEMTutorMVP() {
 
   // Update session time and load progress
   useEffect(() => {
-    const interval = setInterval(() => {
-      setSessionStats((prev) => ({
-        ...prev,
-        timeSpent: Math.floor((Date.now() - student.sessionStartTime.getTime()) / 1000),
-      }))
+    // Ensure student.id is available before starting the interval,
+    // or that getStudentProgress can handle a null/default ID if that's a possible state.
+    // Assuming student.id is populated (e.g., "student_001" or from onboarding/load).
+    if (!student.id) { // Optional: guard if student.id might be initially empty
+        // console.warn("Student ID not yet available for session stats interval.");
+        // return;
+        // Or let learningHistoryManager handle a potentially default/null studentId initially
+    }
 
-      // Update stats from learning history
-      const progress = learningHistoryManager.getStudentProgress()
-      if (progress) {
-        setSessionStats((prev) => ({
-          ...prev,
+    const interval = setInterval(() => {
+      const newTimeSpent = student.sessionStartTime
+        ? Math.floor((Date.now() - student.sessionStartTime.getTime()) / 1000)
+        : 0; // Handle case where sessionStartTime might not be set
+
+      // It's important that learningHistoryManager.loadStudentProgress(student.id)
+      // has been called before this interval expects getStudentProgress() to return specific data.
+      // loadStudentProgress is called in handleOnboardingComplete and potentially when user data is loaded.
+      const progress = learningHistoryManager.getStudentProgress();
+
+      if (progress && progress.studentId === student.id) { // Ensure progress is for the current student
+        setSessionStats({
           problemsSolved: progress.completedSessions,
           accuracy: Math.round(progress.averageAccuracy),
           streak: progress.currentStreak,
-        }))
+          timeSpent: newTimeSpent,
+        });
+      } else {
+        // If no progress data for the current student, or if studentId doesn't match,
+        // update timeSpent and use default/previous values for other stats.
+        // This handles the initial state where `studentProgress` in manager might be null
+        // or for a different student if student.id changed rapidly.
+        setSessionStats(prevStats => ({
+          problemsSolved: prevStats.problemsSolved, // or 0 if preferring reset on student change
+          accuracy: prevStats.accuracy,       // or 0
+          streak: prevStats.streak,           // or 0
+          timeSpent: newTimeSpent,
+        }));
       }
-    }, 1000)
+    }, 1000);
 
-    return () => clearInterval(interval)
-  }, [student.sessionStartTime])
+    return () => clearInterval(interval);
+  }, [student.sessionStartTime, student.id]); // Added student.id to dependencies
 
   // Load dynamic examples when component mounts
   useEffect(() => {
@@ -190,6 +216,26 @@ export default function STEMTutorMVP() {
       loadDynamicExamples()
     }
   }, [isOnboarded, agents.cva, isConfigured])
+
+  // useEffect to load user data
+  useEffect(() => {
+    if (!isUserDataLoading && userData) {
+      // If user data is loaded and is available
+      setStudent(prevStudent => ({
+        ...prevStudent, // Preserve existing fields like 'id'
+        name: userData.name,
+        location: userData.location,
+        gradeLevel: userData.gradeLevel,
+        stemLevel: userData.stemLevel,
+        preferredSubjects: userData.preferredSubjects,
+        // Use lastSession for sessionStartTime if available
+        sessionStartTime: userData.lastSession ? new Date(userData.lastSession) : prevStudent.sessionStartTime,
+      }))
+      setIsOnboarded(true) // Set onboarded status to true to bypass the Onboarding component
+
+      // Note: Persisting and restoring student.id for learningHistoryManager is a potential follow-up.
+    }
+  }, [userData, isUserDataLoading, setStudent, setIsOnboarded])
 
   // Handle onboarding completion
   const handleOnboardingComplete = async (userData: {
@@ -290,7 +336,7 @@ export default function STEMTutorMVP() {
   }
 
   // Content Agent (CA) - Enhanced parallel processing
-  const processSTEMProblem = async (problemText: string, subject = "Mathematics") => {
+  const processSTEMProblem = async (problemText: string, subject = "Mathematics", existingProblemId?: string) => {
     if (!parallelManager || !isConfigured) {
       addAgentResponse("CA", "Please configure your LLM settings to enable interactive problem solving.", "error")
       return
@@ -303,8 +349,9 @@ export default function STEMTutorMVP() {
       // Use parallel processing for faster analysis
       const result = await parallelManager.analyzeProblemParallel(problemText, student.stemLevel, handleProgressUpdate)
 
+      const problemIdToUse = existingProblemId || `stem_${Date.now()}`;
       const problem: STEMProblem = {
-        id: `stem_${Date.now()}`,
+        id: problemIdToUse, // Use existing or new ID
         original: problemText,
         subject: result.analysis.subject || subject,
         type: result.analysis.type,
@@ -312,16 +359,38 @@ export default function STEMTutorMVP() {
         concepts: result.analysis.concepts,
         steps: result.steps.map((step) => ({
           ...step,
-          content: step.equation,
+          content: step.equation, // Assuming 'equation' is the field to map to 'content'
           userInput: undefined,
           isCorrect: undefined,
           attempts: 0,
-          requiresConfirmation: true,
+          requiresConfirmation: true, // Or based on actual logic needed
         })),
         currentStep: 0,
+      };
+
+      try {
+        const problemDetailsToSave = {
+          id: problem.id,
+          original: problem.original,
+          subject: problem.subject,
+          type: problem.type,
+          difficulty: problem.difficulty,
+          concepts: problem.concepts,
+          steps: problem.steps.map(step => ({ // Save step structure
+              id: step.id,
+              description: step.description,
+              content: step.content, // or step.equation if that's the source
+              explanation: step.explanation,
+              // Do not save user-specific runtime data like userInput, isCorrect, attempts
+          })),
+          // currentStep is runtime, not for saving as part of static problem structure
+        };
+        localStorage.setItem(`problem_detail_${problem.id}`, JSON.stringify(problemDetailsToSave));
+      } catch (e) {
+        console.error("Error saving problem detail to localStorage:", e);
       }
 
-      setCurrentProblem(problem)
+      setCurrentProblem(problem);
       setCurrentStep(0)
 
       // Start learning session
@@ -759,10 +828,65 @@ export default function STEMTutorMVP() {
     speakMessage("Ready for a new problem?", "normal", "greeting")
   }
 
-  const handleLoadProblem = (problem: string) => {
-    setExtractedProblem(problem)
-    processSTEMProblem(problem)
-    setCurrentPage("tutor")
+  const handleLoadProblem = (details: { problemId: string; title: string }) => {
+    const storedProblemDetailsString = localStorage.getItem(`problem_detail_${details.problemId}`);
+
+    if (!storedProblemDetailsString) {
+      console.error(`Could not find problem details for ID: ${details.problemId}. Reprocessing.`);
+      // Fallback to re-processing the problem.
+      // Assuming "Mathematics" as default subject if not otherwise determinable here.
+      // The processSTEMProblem function will handle setting up the problem and UI.
+      processSTEMProblem(details.title, "Mathematics", details.problemId);
+      setCurrentPage("tutor");
+      return;
+    }
+
+    try {
+      const loadedDetails = JSON.parse(storedProblemDetailsString);
+
+      const reconstructedProblem: STEMProblem = {
+        id: loadedDetails.id,
+        original: loadedDetails.original,
+        subject: loadedDetails.subject,
+        type: loadedDetails.type,
+        difficulty: loadedDetails.difficulty,
+        concepts: loadedDetails.concepts,
+        steps: loadedDetails.steps.map((stepData: any) => ({ // Use 'any' or a proper type for stored step data
+          id: stepData.id,
+          description: stepData.description,
+          content: stepData.content,
+          explanation: stepData.explanation,
+          userInput: undefined,
+          isCorrect: undefined,
+          attempts: 0,
+          requiresConfirmation: true, // Default value, adjust as needed
+        })),
+        currentStep: 0, // Start from the beginning when loading a problem
+      };
+
+      setExtractedProblem(reconstructedProblem.original); // Update UI consistency
+      setCurrentProblem(reconstructedProblem);
+      setCurrentStep(0); // Ensure currentStep is reset for the newly loaded problem
+
+      // Start a new learning session for this problem
+      if (student && student.id) {
+        const sessionId = learningHistoryManager.startSession(student.id, reconstructedProblem);
+        setCurrentSessionId(sessionId);
+      } else {
+        console.warn("Student ID not available to start learning session when loading problem from history.");
+        // Optionally, prompt for login or handle anonymous user state if student.id is crucial
+      }
+
+      // Transition to chat view and add initial messages
+      startTeaching(reconstructedProblem);
+
+      setCurrentPage("tutor"); // Ensure the current page is set to tutor
+    } catch (error) {
+      console.error("Error loading or processing problem from localStorage:", error);
+      // Fallback if parsing or reconstruction fails
+      processSTEMProblem(details.title, "Mathematics", details.problemId);
+      setCurrentPage("tutor");
+    }
   }
 
   // Show onboarding if not completed

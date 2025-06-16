@@ -103,25 +103,8 @@ export function ChatInterface({
   const { messages, setMessages } = useChatPersistence(problem.id);
   const [currentInput, setCurrentInput] = useState("");
   const [streamingMessage, setStreamingMessage] = useState("");
-  const isInitialMount = useRef(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  // Handle initial greeting - only on first mount
-  useEffect(() => {
-    if (isInitialMount.current && messages.length === 0) {
-      const greetingMessage: ChatMessage = {
-        id: `msg-${Date.now()}`,
-        role: "assistant",
-        content: `Welcome! I'm here to help you solve this ${problem.subject} problem. Let's get started!`,
-        type: "message",
-        timestamp: new Date(),
-        canSpeak: true,
-      };
-      setMessages(prev => [...prev, greetingMessage]);
-      onSpeak(greetingMessage.content, "normal");
-      isInitialMount.current = false;
-    }
-  }, [messages.length, onSpeak, problem.subject, setMessages]);
   
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -152,10 +135,13 @@ export function ChatInterface({
   }, [messages, streamingMessage]);
 
   useEffect(() => {
-    const welcomeMessage: ChatMessage = {
-      id: "welcome",
-      role: "assistant",
-      content: `🎓 **Welcome to your ${problem.subject} learning session!**
+    // Only add initial welcome and step messages if the chat history for this problem.id is empty.
+    // This ensures that existing history isn't overwritten.
+    if (messages && messages.length === 0 && problem && problem.steps && problem.steps[currentStep]) {
+      const welcomeMessage: ChatMessage = {
+        id: "welcome",
+        role: "assistant",
+        content: `🎓 **Welcome to your ${problem.subject} learning session!**
 
 I'm your Teaching Agent, and I'll guide you through solving this problem step by step:
 
@@ -164,15 +150,13 @@ I'm your Teaching Agent, and I'll guide you through solving this problem step by
 This is a **${problem.difficulty}** level **${problem.type}** problem. We'll work through it together in **${problem.steps.length} steps**.
 
 I'm here to help you understand each step, provide hints when needed, and celebrate your progress! Ready to begin? 🚀`,
-      type: "message",
-      timestamp: new Date(),
-      canSpeak: true,
-    }
+        type: "message",
+        timestamp: new Date(),
+        canSpeak: true,
+      };
 
-    const stepMessage: ChatMessage = {
-      id: "step-1",
-      role: "assistant",
-      content: `📝 **Step ${currentStep + 1} of ${problem.steps.length}**
+      const stepMessageContent = problem.steps[currentStep]?.description && problem.steps[currentStep]?.explanation
+        ? `📝 **Step ${currentStep + 1} of ${problem.steps.length}**
 
 ${problem.steps[currentStep]?.description}
 
@@ -185,25 +169,32 @@ Take your time to think about this step. You can:
 • Request a detailed explanation
 • Use voice input by clicking the microphone
 
-What's your approach to this step?`,
-      type: "step",
-      timestamp: new Date(),
-      canSpeak: true,
-      metadata: {
-        stepNumber: currentStep + 1,
-        showControls: true,
-      },
-    }
+What's your approach to this step?`
+        : `Starting step ${currentStep + 1}. Please wait for details.`; // Fallback
 
-    setMessages([welcomeMessage, stepMessage])
+      const stepMessage: ChatMessage = {
+        id: `step-${currentStep + 1}`,
+        role: "assistant",
+        content: stepMessageContent,
+        type: "step",
+        timestamp: new Date(),
+        canSpeak: true,
+        metadata: {
+          stepNumber: currentStep + 1,
+          showControls: true,
+        },
+      };
 
-    // Speak welcome message
-    if (voiceEnabled) {
-      setTimeout(() => {
-        onSpeak(`Let's solve this ${problem.subject} problem step by step!`, "normal", "greeting")
-      }, 1000)
+      setMessages([welcomeMessage, stepMessage]);
+
+      // Speak welcome message (conditionally, if voice is enabled)
+      if (voiceEnabled) {
+        setTimeout(() => {
+          onSpeak(`Let's solve this ${problem.subject} problem step by step!`, "normal", "greeting");
+        }, 1000); // Delay slightly to ensure UI is ready
+      }
     }
-  }, [problem, currentStep, voiceEnabled, onSpeak])
+  }, [messages, problem, currentStep, voiceEnabled, onSpeak, setMessages]);
 
   // Auto-scroll to bottom
   useEffect(() => {
